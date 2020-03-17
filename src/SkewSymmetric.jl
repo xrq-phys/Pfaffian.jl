@@ -8,14 +8,22 @@ using StaticArrays
 # Alias
 ᵀ = transpose
 # No-allocation copy.
-@inline cₚ!(M::MMatrix, A::Union{Array, SubArray}, δn, shiftn, δk, shiftk) = begin
-    for l = 1:δk
-        for i = 1:δn
-            M[i, l] = A[shiftn+i, shiftk+l]
+@inline cₚ!(M::MMatrix, A, δn, shiftn, δk, shiftk, α, Uα) = begin
+    if Uα
+        for l = 1:δk
+            for i = 1:δn
+                M[i, l] = A[shiftn+i, shiftk+l] * α 
+            end
+        end
+    else
+        for l = 1:δk
+            for i = 1:δn
+                M[i, l] = A[shiftn+i, shiftk+l]
+            end
         end
     end
 end
-@inline wᵦ!(M::MMatrix, A::Union{Array, SubArray}, δn, shiftn, δk, shiftk) = begin
+@inline wᵦ!(M::MMatrix, A, δn, shiftn, δk, shiftk) = begin
     for l = 1:δk
         for i = 1:δn
             A[shiftn+i, shiftk+l] = M[i, l]
@@ -95,9 +103,9 @@ function r2k!(C::AntiSymmetric, A::Matrix, B::Matrix, α::Number, β::Number;
         error("SKR2K dimension mismatch.")
     end
     # Core scratchpad.
-    ωA = @MMatrix zeros(νΔn, νΔk)
-    ωB = @MMatrix zeros(νΔn, νΔk)
-    ωC = @MMatrix zeros(νΔn, νΔn)
+    ωA = @MMatrix zeros(Δn, Δk)
+    ωB = @MMatrix zeros(Δn, Δk)
+    # ωC = @MMatrix zeros(Δn, Δn)
     # Blocked diagonal core
     @inline r2km!(νn, νM, νk, νA, νB, scale) = begin
         # Blocking scheme.
@@ -208,9 +216,19 @@ function r2k!(C::AntiSymmetric, A::Matrix, B::Matrix, α::Number, β::Number;
     end
     # Prepare blocking.
     numδn = n ÷ Δn
-    δfinn = n - Δn*(numδn-1)
+    δfinn = n % Δn
+    if δfinn > 0
+        numδn += 1
+    else
+        δfinn = Δn
+    end
     numδk = k ÷ Δk
-    δfink = k - Δk*(numδk-1)
+    δfink = k % Δk
+    if δfink > 0
+        numδk += 1
+    else
+        δfink = Δk
+    end
 
     # Launch the round-down blocking.
     CM = C.M
@@ -226,40 +244,58 @@ function r2k!(C::AntiSymmetric, A::Matrix, B::Matrix, α::Number, β::Number;
                 else Δk end
             scale = lδ == 1 && abs(β-1) > eps(β)
             shiftl = Δk*(lδ-1)
+            ωB .= zero(α)
+            # ωB = B[(1:δj).+shiftj, (1:δl).+shiftl].*α
+            cₚ!(ωB, B, δj, shiftj, δl, shiftl, α, true)
             for iδ = 1:numδn
                 δi = if (iδ == numδn) δfinn
                     else Δn end
                 shifti = Δn*(iδ-1)
+                cₚ!(ωA, A, δi, shifti, δl, shiftl, one(α), false)
+                # ωA = A[(1:δi).+shifti, (1:δl).+shiftl]
                 if iδ == jδ
-                    # r2kμ!(δj, 
-                    #       view(CM, (1:δi).+shifti, (1:δj).+shiftj), 
-                    #       δl, 
-                    #       view(A, (1:δi).+shifti, (1:δl).+shiftl),
-                    #       view(B, (1:δj).+shiftj, (1:δl).+shiftl), α, scale)
-                    r2km!(δj, 
+                    r2kμ!(δj, 
                           view(CM, (1:δi).+shifti, (1:δj).+shiftj), 
-                          δl, 
-                          view(A, (1:δi).+shifti, (1:δl).+shiftl),
-                          view(B, (1:δj).+shiftj, (1:δl).+shiftl), scale)
+                          δl, ωA, ωB, α, scale)
+                          #(view(A, (1:δi).+shifti, (1:δl).+shiftl),
+                          # view(B, (1:δj).+shiftj, (1:δl).+shiftl), α, scale)
+                    # r2km!(δj, 
+                    #       view(CM, (1:δi).+shifti, (1:δj).+shiftj), 
+                    #       δl, ωA, ωB, scale)
+                          #(view(A, (1:δi).+shifti, (1:δl).+shiftl),
+                          # view(B, (1:δj).+shiftj, (1:δl).+shiftl), scale)
                 else
                     if iδ < jδ
-                        gemm!('N', 'T', α,
-                              view(A, (1:δi).+shifti, (1:δl).+shiftl),
-                              view(B, (1:δj).+shiftj, (1:δl).+shiftl),
-                              if scale β 
-                                  else one(β) end,
-                              view(CM, (1:δi).+shifti, (1:δj).+shiftj))
+                        if iδ == numδn || jδ == numδn
+                            gemm!('N', 'T', α,
+                                  view(ωA, 1:δi, 1:δl),
+                                  view(ωB, 1:δj, 1:δl),
+                                  if scale β 
+                                      else one(β) end,
+                                  view(CM, (1:δi).+shifti, (1:δj).+shiftj))
+                        else
+                            gemm!('N', 'T', α, ωA, ωB,
+                                  if scale β 
+                                      else one(β) end,
+                                  view(CM, (1:δi).+shifti, (1:δj).+shiftj))
+                        end
                         # mul!(view(CM, (1:δi).+shifti, (1:δj).+shiftj),
                         #      view(A, (1:δi).+shifti, (1:δl).+shiftl),
                         #      ᵀ(view(B, (1:δj).+shiftj, (1:δl).+shiftl)), 
                         #      α, if scale β 
                         #          else one(β) end)
                     else
-                        gemm!('N', 'T', -α,
-                              view(B, (1:δj).+shiftj, (1:δl).+shiftl),
-                              view(A, (1:δi).+shifti, (1:δl).+shiftl),
-                              one(β),
-                              view(CM, (1:δj).+shiftj, (1:δi).+shifti))
+                        if iδ == numδn || jδ == numδn
+                            gemm!('N', 'T', -α,
+                                  view(ωB, 1:δj, 1:δl),
+                                  view(ωA, 1:δi, 1:δl),
+                                  one(β),
+                                  view(CM, (1:δj).+shiftj, (1:δi).+shifti))
+                        else
+                            gemm!('N', 'T', -α, ωB, ωA,
+                                  one(β),
+                                  view(CM, (1:δj).+shiftj, (1:δi).+shifti))
+                        end
                         # mul!(view(CM, (1:δj).+shiftj, (1:δi).+shifti),
                         #      view(B, (1:δj).+shiftj, (1:δl).+shiftl),
                         #      ᵀ(view(A, (1:δi).+shifti, (1:δl).+shiftl)),
