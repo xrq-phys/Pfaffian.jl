@@ -6,6 +6,7 @@
 module ParlettReid
 
 using LinearAlgebra
+using LinearAlgebra.BLAS: ger!
 using ..SkewSymmetric: AntiSymmetric, r2k!, r2!, ᵀ
 
 """
@@ -26,13 +27,14 @@ function simple(A::AntiSymmetric{T}; calc_inv::Bool=false) where {T}
         αₖ[1:i+1] .= 0.0
         r2!(A, αₖ, aₖ, 1.0, 1.0)
         if calc_inv
-            # mₖ = M[i+1, :]
+            # mₖ = M[i+1, :] for original M
             mₖ = M[:, i+1]
-            # M -= αₖ*mₖ'
-            M -= mₖ*αₖ'
+            # M -= αₖ*mₖ' for original M
+            # M -= mₖ*αₖ', which is:
+            ger!(-1.0, mₖ, αₖ, M)
         end
     end; 
-    PfA = prod([A[i, i+1] for i=1:2:7])
+    PfA = prod([A[i, i+1] for i=1:2:n₁-1])
     if calc_inv
         PfA, M*inv(copy(A))* ᵀ(M)
     else
