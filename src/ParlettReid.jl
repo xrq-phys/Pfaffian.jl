@@ -9,6 +9,28 @@ using LinearAlgebra
 using LinearAlgebra.BLAS: ger!
 using ..SkewSymmetric: AntiSymmetric, r2k!, r2!, ᵀ
 
+function inv_tile(A::AntiSymmetric{T}) where {T}
+    n₁, n₂ = size(A)
+
+    # TODO: change to j->i.
+    # TODO: improve locality.
+    for i = 1:2:n₁-1
+        local r = 1.0
+        for j = i+1:2:n₂
+            r /= A[j-1, j] # aᵢ
+            A[i, j] = -r
+            if j ≠ n₂
+                r *= A[j, j+1] # bᵢ
+            end
+        end
+        if i ≠ n₁-1
+            # Zeroize next line.
+            A[i+1, i+2] = 0.0
+        end
+    end
+    A
+end
+
 """
     simple(A::AntiSymmetric{T})
 
@@ -36,7 +58,7 @@ function simple(A::AntiSymmetric{T}; calc_inv::Bool=false) where {T}
     end; 
     PfA = prod([A[i, i+1] for i=1:2:n₁-1])
     if calc_inv
-        PfA, M*inv(copy(A))* ᵀ(M)
+        PfA, M*inv_tile(A)* ᵀ(M)
     else
         (PfA, )
     end
