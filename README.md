@@ -1,4 +1,4 @@
-Pfaffian with ParlettReid Method
+Pfaffian with Parlett-Reid Method
 ========
 
 This is a simple [Julia](https://julialang.org) program for computing Pfaffian of an antisymmetric matrix.
@@ -6,5 +6,5 @@ This is a simple [Julia](https://julialang.org) program for computing Pfaffian o
 ## WIP List
 
 - ~~Blocked rank-2 update `r2k!`~~
-- ~~Accumulate and use blocked version in ParlettReid~~
+- ~~Accumulate and use blocked version in Parlett-Reid~~
 - **Pivoting**
