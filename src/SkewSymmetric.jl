@@ -89,20 +89,29 @@ function Base.broadcast!(func, C::AntiSymmetric{T}, v::Number) where {T}
     C
 end
 
+# General Matrices and Vectors
+GMatrix = Union{Array{T, 2}, SubArray{T, 2}, MArray{N, T, 2} where N} where T
+GVector = Union{Array{T, 1}, SubArray{T, 1}, MArray{N, T, 1} where N} where T
+
 "Antisymmetric rank-2 update."
 function r2!(C::AntiSymmetric, A::Vector, B::Vector, α::Number, β::Number)
     r2k!(C, reshape(A, length(A), 1), reshape(B, length(B), 1), α, β)
 end
 
 "Implements antisymmetric block rank-2 update: M + A B' - B A'"
-function r2k!(C::AntiSymmetric, A::Matrix, B::Matrix, α::Number, β::Number; 
-              Δn::Int=64, Δk::Int=64, νΔn::Int=4, νΔk::Int=8)
+function r2k!(C::AntiSymmetric, A::GMatrix, B::GMatrix, α::Number, β::Number;
+              Δn::Int=64, Δk::Int=64, νΔn::Int=4, νΔk::Int=8, k::Int=0)
     if abs(α) ≤ eps(α)
         return broadcast!(*, C, β)
     end
     # Check parameters.
     n = size(A)[1]
-    k, k_ = size(A)[2], size(B)[2]
+    if k < 1
+        # TODO: should provide good support for view instead of letting user specify a custom k.
+        k, k_ = size(A)[2], size(B)[2]
+    else
+        k_= k
+    end
     if k != k_
         error("SKR2K dimension mismatch.")
     end
