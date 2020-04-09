@@ -74,6 +74,22 @@ function blocked(A::AntiSymmetric{T}; calc_inv::Bool=false, block_size::Int=0) w
     if block_size < 1 || block_size > n₁
         return simple(A, calc_inv=calc_inv)
     end
+    # Function for view-swapping.
+    swapln(v1::SubArray{T, 1}, v2::SubArray{T, 1}, cnt::Int, sign::Bool=false) = begin
+        if !sign
+            for i = 1:cnt
+                telem = v1[i]
+                v1[i] = v2[i]
+                v2[i] = telem
+            end
+        else
+            for i = 1:cnt
+                telem = v1[i]
+                v1[i] =-v2[i]
+                v2[i] =-telem
+            end
+        end
+    end
 
     local M = zero(A) + I
     vV = @MMatrix zeros(n₁, block_size)
@@ -93,9 +109,37 @@ function blocked(A::AntiSymmetric{T}; calc_inv::Bool=false, block_size::Int=0) w
         mₖ = @MVector zeros(block_size)
         for i = 0:δi-1
             icur = ist+i
-            αₖ .= aₖ # A[:, icur]
+            αₖ .= aₖ # updated A[:, icur].
+            if true # abs(αₖ[icur+1]) < 1e-4
+                # Pivoting
+                sₐ = icur+1
+                α₁, tₐ = findmax(abs.(αₖ))
+                α₁ = αₖ[tₐ] # use value instead of abs.
+                if sₐ < tₐ
+                    # Swap the updates.
+                    if i != 0
+                        swapln(view(vV, sₐ, 1:δi), view(vV, tₐ, 1:δi), δi)
+                        swapln(view(vW, sₐ, 1:δi), view(vW, tₐ, 1:δi), δi)
+                    end
+                    # Swapping for A.
+                    swapln(view(A, 1:sₐ-1, sₐ), view(A, 1:sₐ-1, tₐ), sₐ-1)
+                    A[sₐ, tₐ] *= -1
+                    if tₐ > sₐ+1
+                        swapln(view(A, sₐ+1:tₐ-1, tₐ), view(A, sₐ, sₐ+1:tₐ-1), tₐ-sₐ-1, true)
+                    end
+                    swapln(view(A, sₐ, tₐ+1:n₁), view(A, tₐ, tₐ+1:n₁), n₁-tₐ)
+                    αₖ[tₐ] = αₖ[icur+1]
+                    αₖ[icur+1] = α₁
+                    if calc_inv
+                        # Mᵀ update.
+                        swapln(view(M, :, sₐ), view(M, :, tₐ), n₁)
+                        if i != 0
+                            swapln(view(mW, sₐ, 1:δi), view(mW, tₐ, 1:δi), δi)
+                        end
+                    end
+                end
+            end
             aₖ = A[:, icur+1]
-            # TODO: for pivoting: break if αₖ[icur+1] is small.
             αₖ ./= αₖ[icur+1]
             αₖ[1:icur+1] .= 0.0
             # aₖ -= vV*Wω - vW*Vω
