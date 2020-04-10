@@ -110,7 +110,7 @@ function blocked(A::AntiSymmetric{T}; calc_inv::Bool=false, block_size::Int=0) w
         for i = 0:δi-1
             icur = ist+i
             αₖ .= aₖ # updated A[:, icur].
-            if true # abs(αₖ[icur+1]) < 1e-4
+            if abs(αₖ[icur+1]) < 1e-4
                 # Pivoting
                 sₐ = icur+1
                 α₁, tₐ = findmax(abs.(αₖ))
