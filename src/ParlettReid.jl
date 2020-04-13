@@ -92,10 +92,10 @@ function blocked(A::AntiSymmetric{T}; calc_inv::Bool=false, block_size::Int=0) w
     end
 
     local M = zero(A) + I
-    vV = @MMatrix zeros(n₁, block_size)
-    vW = @MMatrix zeros(n₁, block_size)
-    mW = @MMatrix zeros(n₁, block_size) # changes in M.
-    mM = @MMatrix zeros(n₁, block_size) # for slicing M.
+    vV = @MMatrix zeros(eltype(A), n₁, block_size)
+    vW = @MMatrix zeros(eltype(A), n₁, block_size)
+    mW = @MMatrix zeros(eltype(A), n₁, block_size) # changes in M.
+    mM = @MMatrix zeros(eltype(A), n₁, block_size) # for slicing M.
     @uviews vV begin
     @uviews vW begin
     @uviews mW begin
@@ -105,8 +105,8 @@ function blocked(A::AntiSymmetric{T}; calc_inv::Bool=false, block_size::Int=0) w
             else block_size end
         # A contribution to uₖ.
         local aₖ = A[:, ist]
-        αₖ = @MVector zeros(n₁)
-        mₖ = @MVector zeros(block_size)
+        αₖ = @MVector zeros(eltype(A), n₁)
+        mₖ = @MVector zeros(eltype(A), block_size)
         for i = 0:δi-1
             icur = ist+i
             αₖ .= aₖ # updated A[:, icur].
@@ -128,8 +128,8 @@ function blocked(A::AntiSymmetric{T}; calc_inv::Bool=false, block_size::Int=0) w
                         swapln(view(A, sₐ+1:tₐ-1, tₐ), view(A, sₐ, sₐ+1:tₐ-1), tₐ-sₐ-1, true)
                     end
                     swapln(view(A, sₐ, tₐ+1:n₁), view(A, tₐ, tₐ+1:n₁), n₁-tₐ)
-                    αₖ[tₐ] = αₖ[icur+1]
-                    αₖ[icur+1] = α₁
+                    αₖ[tₐ] = αₖ[sₐ]
+                    αₖ[sₐ] = α₁
                     if calc_inv
                         # Mᵀ update.
                         swapln(view(M, :, sₐ), view(M, :, tₐ), n₁)
@@ -152,7 +152,7 @@ function blocked(A::AntiSymmetric{T}; calc_inv::Bool=false, block_size::Int=0) w
                 mₖ .= mW[icur+1, :]
                 if i != 0
                     # change of already added terms.
-                    ger!(-1.0, αₖ, view(mₖ, 1:i), view(mW, :, 1:i))
+                    ger!(eltype(A)(-1), αₖ, view(mₖ, 1:i), view(mW, :, 1:i))
                 end
                 mW[:, i+1] = αₖ
             end
@@ -165,7 +165,7 @@ function blocked(A::AntiSymmetric{T}; calc_inv::Bool=false, block_size::Int=0) w
         if calc_inv
             # TODO: change load order.
             mM[:, 1:δi] = M[:, ist+1:ist+δi]
-            gemm!('N', 'T', -1.0, view(mM, :, 1:δi), view(mW, :, 1:δi), 1.0, M)
+            gemm!('N', 'T', eltype(A)(-1), view(mM, :, 1:δi), view(mW, :, 1:δi), eltype(A)(1), M)
         end
         # Clear changes.
         # vV .= 0.0
@@ -176,8 +176,9 @@ function blocked(A::AntiSymmetric{T}; calc_inv::Bool=false, block_size::Int=0) w
     end # @uviews vW
     end # @uviews vV
 
-    # Return values are the same.
+    # Pfaffian has p/m arbitrarity.
     PfA = prod([A[i, i+1] for i=1:2:n₁-1])
+    PfA = if (real(PfA) > 0) PfA else -PfA end
     if calc_inv
         PfA, M*inv_tile(A)* ᵀ(M)
     else

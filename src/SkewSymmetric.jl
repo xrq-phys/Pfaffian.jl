@@ -116,9 +116,9 @@ function r2k!(C::AntiSymmetric, A::GMatrix, B::GMatrix, α::Number, β::Number;
         error("SKR2K dimension mismatch.")
     end
     # Core scratchpad.
-    ωA = @MMatrix zeros(Δn, Δk)
-    ωB = @MMatrix zeros(Δn, Δk)
-    # ωC = @MMatrix zeros(Δn, Δn)
+    ωA = @MMatrix zeros(eltype(C), Δn, Δk)
+    ωB = @MMatrix zeros(eltype(C), Δn, Δk)
+    # ωC = @MMatrix zeros(eltype(C), Δn, Δn)
     # Blocked diagonal core
     @inline r2km!(νn, νM, νk, νA, νB, scale) = begin
         # Blocking scheme.
